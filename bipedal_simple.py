@@ -1,23 +1,32 @@
 import gymnasium as gym
+import imageio
 
-env = gym.make("BipedalWalker-v3", render_mode="human")
+# Load the environment
+env = gym.make("BipedalWalker-v3", render_mode="rgb_array")
 
 def simple_controller(obs):
     # A very basic controller that tries to balance the walker
     # obs[2] is the hull angle, obs[4] and obs[6] are the joint angles
     angle = obs[2]
     if angle < 0:
-        action = 1  # try to push to the right
+        return [1, 0, 0, 0]  # try to push to the right
     else:
-        action = -1  # try to push to the left
-    return action
+        return [0, 0, 0, 1]  # try to push to the left
+
+# Create a list to store frames
+frames = []
 
 episodes = 5
 for episode in range(episodes):
-    obs = env.reset()
+    obs, _ = env.reset()  # Unpack the observation if reset returns a tuple
     done = False
     while not done:
         action = simple_controller(obs)
-        obs, reward, done, info, _ = env.step(action)
-        env.render()
+        obs, reward, done, _, _ = env.step(action)  # Unpack if step returns a tuple
+        frame = env.render()
+        frames.append(frame)
+
 env.close()
+
+# Save the frames as a gif
+imageio.mimsave('bipedal_simple.gif', frames, fps=24)

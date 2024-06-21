@@ -8,16 +8,18 @@ Created on Sat Aug 12 14:10:37 2017
 import gym
 import numpy as np
 from copy import deepcopy
+import pickle
+import imageio
 
-def glorot_uniform(n_inputs,n_outputs,multiplier=1.0):
+def glorot_uniform(n_inputs, n_outputs, multiplier=1.0):
     ''' Glorot uniform initialization '''
-    glorot = multiplier*np.sqrt(6.0/(n_inputs+n_outputs))
-    return np.random.uniform(-glorot,glorot,size=(n_inputs,n_outputs))
+    glorot = multiplier * np.sqrt(6.0 / (n_inputs + n_outputs))
+    return np.random.uniform(-glorot, glorot, size=(n_inputs, n_outputs))
 
-def softmax(scores,temp=5.0):
+def softmax(scores, temp=5.0):
     ''' transforms scores to probabilites '''
-    exp = np.exp(np.array(scores)/temp)
-    return exp/exp.sum()
+    exp = np.exp(np.array(scores) / temp)
+    return exp / exp.sum()
 
 class Agent(object):
     ''' A Neural Network '''
@@ -29,10 +31,10 @@ class Agent(object):
         self.n_outputs = n_outputs
         self.mutate_rate = mutate_rate
         self.init_multiplier = init_multiplier
-        self.network = {'Layer 1' : glorot_uniform(n_inputs, n_hidden,init_multiplier),
-                        'Bias 1'  : np.zeros((1,n_hidden)),
-                        'Layer 2' : glorot_uniform(n_hidden, n_outputs,init_multiplier),
-                        'Bias 2'  : np.zeros((1,n_outputs))}
+        self.network = {'Layer 1': glorot_uniform(n_inputs, n_hidden, init_multiplier),
+                        'Bias 1': np.zeros((1, n_hidden)),
+                        'Layer 2': glorot_uniform(n_hidden, n_outputs, init_multiplier),
+                        'Bias 2': np.zeros((1, n_outputs))}
                         
     def act(self, state):
         ''' Use the network to decide on an action '''
@@ -51,43 +53,49 @@ class Agent(object):
         ''' overloads the + operator for breeding '''
         child = Agent(self.n_inputs, self.n_hidden, self.n_outputs, self.mutate_rate, self.init_multiplier)
         for key in child.network:
-            n_inputs,n_outputs = child.network[key].shape
-            mask = np.random.choice([0,1],size=child.network[key].shape,p=[.5,.5])
-            random = glorot_uniform(mask.shape[0],mask.shape[1])
-            child.network[key] = np.where(mask==1,self.network[key],another.network[key])
-            mask = np.random.choice([0,1],size=child.network[key].shape,p=[1-self.mutate_rate,self.mutate_rate])
-            child.network[key] = np.where(mask==1,child.network[key]+random,child.network[key])
+            n_inputs, n_outputs = child.network[key].shape
+            mask = np.random.choice([0, 1], size=child.network[key].shape, p=[.5, .5])
+            random = glorot_uniform(mask.shape[0], mask.shape[1])
+            child.network[key] = np.where(mask == 1, self.network[key], another.network[key])
+            mask = np.random.choice([0, 1], size=child.network[key].shape, p=[1 - self.mutate_rate, self.mutate_rate])
+            child.network[key] = np.where(mask == 1, child.network[key] + random, child.network[key])
         return child
     
-def run_trial(env,agent,verbose=False):
-    ''' an agent performs 3 episodes of the env '''
+def run_trial(env, agent, verbose=False, max_steps=2000):
+    ''' an agent performs 1 episode of the env '''
     totals = []
-    for _ in range(3):
+    for _ in range(3):  # Reduced to 1 episode
         state = env.reset()
         if verbose: env.render()
         total = 0
         done = False
-        while not done:
-            state, reward, done, _, _ = env.step(agent.act(state))
+        steps = 0
+        while not done and steps < max_steps:
+            state, reward, done, truncated, _ = env.step(agent.act(state))
+            if not isinstance(done, (bool, np.bool_)):
+                done = bool(done)
+            if not isinstance(truncated, (bool, np.bool_)):
+                truncated = bool(truncated)
             if verbose: env.render()
             total += reward
+            steps += 1
         totals.append(total)
-    return sum(totals)/3.0
+    return sum(totals) / 1.0  # Adjusted for 1 episode
 
-def next_generation(env,population,scores,temperature):
+def next_generation(env, population, scores, temperature):
     ''' breeds a new generation of agents '''
-    scores, population =  zip(*sorted(zip(scores,population),reverse=True))
-    children = list(population[:len(population)//4])
-    parents = list(np.random.choice(population,size=2*(len(population)-len(children)),p=softmax(scores,temperature)))
-    children = children + [parents[i]+parents[i+1] for i in range(0,len(parents)-1,2)]
-    scores = [run_trial(env,agent) for agent in children]
+    scores, population = zip(*sorted(zip(scores, population), reverse=True))
+    children = list(population[:len(population) // 4])
+    parents = list(np.random.choice(population, size=2 * (len(population) - len(children)), p=softmax(scores, temperature)))
+    children = children + [parents[i] + parents[i + 1] for i in range(0, len(parents) - 1, 2)]
+    scores = [run_trial(env, agent) for agent in children]
 
-    return children,scores
+    return children, scores
 
 def main():
     ''' main function '''
     # Setup environment
-    env = gym.make('BipedalWalker-v3')
+    env = gym.make('BipedalWalker-v3', render_mode="rgb_array")
     env.action_space.seed(0)
     env.observation_space.seed(0)
     np.random.seed(0)
@@ -99,24 +107,42 @@ def main():
     multiplier = 5
     
     # Population params
-    pop_size = 5
+    pop_size = 50
     mutate_rate = .1
     softmax_temp = 5.0
     
     # Training
-    n_generations = 3
-    population = [Agent(n_inputs,n_hidden,n_actions,mutate_rate,multiplier) for i in range(pop_size)]
-    scores = [run_trial(env,agent) for agent in population]
+    n_generations = 40
+    population = [Agent(n_inputs, n_hidden, n_actions, mutate_rate, multiplier) for i in range(pop_size)]
+    scores = [run_trial(env, agent) for agent in population]
     best = [deepcopy(population[np.argmax(scores)])]
+    
     for generation in range(n_generations):
-        population,scores = next_generation(env,population, scores,softmax_temp)
+        print(f"Starting generation {generation}...")
+        population, scores = next_generation(env, population, scores, softmax_temp)
         best.append(deepcopy(population[np.argmax(scores)]))
-        print("Generation:", generation,"Score:",np.max(scores))
+        print("Generation:", generation, "Score:", np.max(scores))
 
-    # Record every agent
-    env = gym.wrappers.Monitor(env,'/tmp/walker',force=True,video_callable=lambda episode_id: episode_id%3==0)   
-    for agent in best:
-        run_trial(env,agent)
+    # Save the best agent's performance as a GIF using imageio
+    best_agent = best[-1]
+    frames = []
+    state = env.reset()
+    done = False
+    while not done:
+        frame = env.render()
+        frames.append(frame)
+        state, reward, done, truncated, _ = env.step(best_agent.act(state))
+        if not isinstance(done, (bool, np.bool_)):
+            done = bool(done)
+        if not isinstance(truncated, (bool, np.bool_)):
+            truncated = bool(truncated)
+    
+    # Pickle the best agent
+    with open('best_agent.pkl', 'wb') as f:
+        pickle.dump(best_agent, f)
+
+    imageio.mimsave("best_agent_performance.gif", frames, fps=24)
+    
     env.close()
     
 if __name__ == '__main__':

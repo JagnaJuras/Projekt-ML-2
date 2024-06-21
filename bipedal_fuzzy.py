@@ -3,6 +3,7 @@ import skfuzzy as fuzz
 from skfuzzy import control as ctrl
 import gymnasium as gym
 import pickle
+import imageio
 
 # Define fuzzy variables and rules
 angle = ctrl.Antecedent(np.arange(-1, 1, 0.01), 'angle')
@@ -27,7 +28,7 @@ sim = ctrl.ControlSystemSimulation(control_system)
 with open('fuzzy_controller.pkl', 'wb') as f:
     pickle.dump((control_system, sim), f)
 
-env = gym.make("BipedalWalker-v3")
+env = gym.make("BipedalWalker-v3", render_mode="rgb_array")
 
 def fuzzy_controller(obs):
     # Unpack the observation tuple if necessary
@@ -45,12 +46,20 @@ def fuzzy_controller(obs):
     action = np.array([action_value, 0, action_value, 0])
     return action
 
-episodes = 5
+# Create a list to store frames
+frames = []
+
+episodes = 1
 for episode in range(episodes):
-    obs = env.reset()
+    obs, _ = env.reset()
     done = False
     while not done:
         action = fuzzy_controller(obs)
         obs, reward, done, _, _ = env.step(action)
-        env.render()
+        frame = env.render()
+        frames.append(frame)
+
 env.close()
+
+# Save the frames as a gif
+imageio.mimsave('bipedal_fuzzy.gif', frames, fps=24)
