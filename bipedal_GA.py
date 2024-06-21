@@ -10,6 +10,7 @@ import numpy as np
 from copy import deepcopy
 import pickle
 import imageio
+import matplotlib.pyplot as plt
 
 def glorot_uniform(n_inputs, n_outputs, multiplier=1.0):
     ''' Glorot uniform initialization '''
@@ -64,7 +65,7 @@ class Agent(object):
 def run_trial(env, agent, verbose=False, max_steps=2000):
     ''' an agent performs 1 episode of the env '''
     totals = []
-    for _ in range(3):  # Reduced to 1 episode
+    for _ in range(3):  # Increase number of episodes for averaging
         state = env.reset()
         if verbose: env.render()
         total = 0
@@ -80,12 +81,12 @@ def run_trial(env, agent, verbose=False, max_steps=2000):
             total += reward
             steps += 1
         totals.append(total)
-    return sum(totals) / 1.0  # Adjusted for 1 episode
+    return sum(totals) / 3.0  # Average over more episodes
 
 def next_generation(env, population, scores, temperature):
     ''' breeds a new generation of agents '''
     scores, population = zip(*sorted(zip(scores, population), reverse=True))
-    children = list(population[:len(population) // 4])
+    children = list(population[:len(population) // 4])  # Elitism
     parents = list(np.random.choice(population, size=2 * (len(population) - len(children)), p=softmax(scores, temperature)))
     children = children + [parents[i] + parents[i + 1] for i in range(0, len(parents) - 1, 2)]
     scores = [run_trial(env, agent) for agent in children]
@@ -103,11 +104,11 @@ def main():
     # network params
     n_inputs = env.observation_space.shape[0]
     n_actions = env.action_space.shape[0]
-    n_hidden = 512
+    n_hidden = 512  # Increase hidden units if needed
     multiplier = 5
     
     # Population params
-    pop_size = 50
+    pop_size = 100  # Increase population size
     mutate_rate = .1
     softmax_temp = 5.0
     
@@ -116,12 +117,22 @@ def main():
     population = [Agent(n_inputs, n_hidden, n_actions, mutate_rate, multiplier) for i in range(pop_size)]
     scores = [run_trial(env, agent) for agent in population]
     best = [deepcopy(population[np.argmax(scores)])]
+    best_scores = [np.max(scores)]  # Track the best scores
     
     for generation in range(n_generations):
         print(f"Starting generation {generation}...")
         population, scores = next_generation(env, population, scores, softmax_temp)
-        best.append(deepcopy(population[np.argmax(scores)]))
-        print("Generation:", generation, "Score:", np.max(scores))
+        best_agent_idx = np.argmax(scores)
+        best.append(deepcopy(population[best_agent_idx]))
+        best_scores.append(scores[best_agent_idx])
+        print("Generation:", generation, "Score:", scores[best_agent_idx])
+    
+    # Plot the learning process
+    plt.plot(best_scores)
+    plt.xlabel('Generation')
+    plt.ylabel('Best Score')
+    plt.title('Learning Process')
+    plt.show()
 
     # Save the best agent's performance as a GIF using imageio
     best_agent = best[-1]
@@ -138,10 +149,10 @@ def main():
             truncated = bool(truncated)
     
     # Pickle the best agent
-    with open('best_agent.pkl', 'wb') as f:
+    with open('new_best_agent.pkl', 'wb') as f:
         pickle.dump(best_agent, f)
 
-    imageio.mimsave("best_agent_performance.gif", frames, fps=24)
+    imageio.mimsave("new_best_agent_performance.gif", frames, fps=24)
     
     env.close()
     
